@@ -15,7 +15,7 @@ class ESPEasyGarageOpener {
         this.name = config.name;
         this.ip = config.ip;
         this.lastOpened = new Date();
-        this.SensorState = { Close: true, Open: false, Relay: false , Motor: false};
+        this.SensorState = { Close: true, Open: false, Relay: false, Motor: false };
         this.service = new Service.GarageDoorOpener(this.name, this.name);
         this.setupGarageDoorOpenerService();
 
@@ -46,34 +46,52 @@ class ESPEasyGarageOpener {
                 var json = JSON.parse(body);
 
                 log.debug('State: ' + json.Sensors);
-                for (var keyStat in this.SensorsState){
+                for (var keyStat in this.SensorsState) {
                     this.SensorsState[keyStat] = getStateFromJson(json, keyStat);
                 }
-                
-                callback(null, (json.state == 1));
-                return;
+
+                if (this.SensorsState.Close && !this.SensorsState.Open) {
+                    callback(null, Characteristic.TargetDoorState.CLOSED)
+                    return
+                }
+
+                if (!this.SensorState.Close && this.SensorState.Open) {
+                    callback(null, Characteristic.TargetDoorState.OPEN)
+                    return
+                }
+
+                if (this.SensorState.Close && this.SensorState.Open) {
+                    callback(null, Characteristic.TargetDoorState.OPENING)
+                    return
+                }
+
+                log.debug('Error getting door state. (%s)', error);
+                callback();
             }
-
-            log.debug('Error getting door state. (%s)', error);
-
-            callback();
-        });
+            else{
+                log.debug('Error getting door state. (%s)', error);
+                callback();
+            }
+        })
     }
 
-}
-getStateFromJson(json, key){
-    try {
-        return (parseInt(json.Sensors.find(item => item.TaskName.toUpper() == key.toUpper()).state) == 1);
+    getOpen() {
+        return this.SensorsState.Close && !this.SensorsState.Open
+    }
+
+    getStateFromJson(json, key) {
+        try {
+            return (parseInt(json.Sensors.find(item => item.TaskName.toUpperCase() == key.toUpperCase()).state) == 1);
+
+        }
+        catch{
+            return false;
+        }
+    }
+    setState(callback) {
 
     }
-    catch{
-        return false;
+    getServices() {
+        return [this.informationService, this.service];
     }
-}
-setState(callback){
-
-}
-getServices() {
-    return [this.informationService, this.service];
-}
 }
