@@ -38,6 +38,7 @@ class ESPEasyGarageOpener {
     }
     getState(callback) {
         var log = this.log;
+        var state = 
         request.get({
             url: 'http://' + this.ip + '/json',
             timeout: 120000
