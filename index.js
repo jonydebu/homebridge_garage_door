@@ -27,7 +27,7 @@ class ESPEasyGarageOpener {
         this.garageDoorOpener = new Service.GarageDoorOpener(this.name, this.name);
 
         this.currentDoorState = this.garageDoorOpener.getCharacteristic(DoorState);
-        this.currentDoorState.getCharacteristic(Characteristic.CurrentDoorState)
+        this.currentDoorState
             .on('get', this.getCurrentState.bind(this));
 
         this.targetDoorState = this.garageDoorOpener.getCharacteristic(Characteristic.TargetDoorState);
@@ -90,17 +90,25 @@ class ESPEasyGarageOpener {
             this.operating = false;
         })
     }
-
+    parseJSON(key,value){
+        this.log("parse")
+        if(key === 'System')
+        return  ''
+        else
+    return value;
+    }
     readSensorState(callback) {
         request.get({
             url: 'http://' + this.ip + '/json',
             timeout: 120000
         }, (error, response, body) => {
             if (!error && response.statusCode == 200) {
-                var json = JSON.parse(body);
+                var json = JSON.parse('{"System":{"Build": 20000,"Unit": 1, "Uptime": 1143,"Free RAM": 20464 },"Sensors":[ {"TaskName": "Close","state": 1.00},{"TaskName": "Open","state": 0.00}, { "TaskName": "Relay",  "state": 0.00},{  "TaskName": "Motor",   "state": 0.0 }]}')
+                 //var json = JSON.parse(body,(key,value) => this.parseJSON(key,value));
 
-                json.Sensors.ForEach(item => {
-                    this.SensorsState[item.TaskName] = (item.state == 1)
+                json.Sensors.forEach(item => {
+                    this.log(item)
+                    this.SensorsState[item.TaskName] = (item.state == 1 ? true : false)
                 })
                 this.SensorState.Error = false;
 
