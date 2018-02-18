@@ -158,7 +158,6 @@ class ESPEasyGarageOpener {
             log.debug('Error setting door state. (%s)', error);
         });
 
-        )
 
     }
     getServices() {
