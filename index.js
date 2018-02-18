@@ -1,10 +1,11 @@
 // This is plugin for homebridge
 var request = require('request');
-var Service, Characteristic;
+var Service, Characteristic, DoorState;
+
 module.exports = (homebridge) => {
     Service = homebridge.hap.Service;
     Characteristic = homebridge.hap.Characteristic;
-    DoorState = homebridge.hap.Characteristic.CurrentDoorState;
+    DoorState = Characteristic.CurrentDoorState;
 
     homebridge.registerAccessory("ESPEasyGarageOpener", "ESPEasyGarageOpener", ESPEasyGarageOpener);
 };
@@ -14,31 +15,83 @@ class ESPEasyGarageOpener {
         this.log = log;
         this.name = config.name;
         this.ip = config.ip;
-        this.lastOpened = new Date();
-        this.SensorState = { Close: true, Open: false, Relay: false, Motor: false };
-        this.service = new Service.GarageDoorOpener(this.name, this.name);
-        this.setupGarageDoorOpenerService();
+        this.doorOpensInSeconds = config.doorOpensInSeconds || 16;
+        this.doorCloseInSeconds = config.doorCloseInSeconds || this.doorOpensInSeconds;
+        this.SensorState = { Error: false, Close: true, Open: false, Relay: false, Motor: false };
+        this.initService();
+    }
+
+
+    initService() {
+        this.operating = false;
+        this.garageDoorOpener = new Service.GarageDoorOpener(this.name, this.name);
+
+        this.currentDoorState = this.garageDoorOpener.getCharacteristic(DoorState);
+        this.currentDoorState.getCharacteristic(Characteristic.CurrentDoorState)
+            .on('get', this.getCurrentState.bind(this));
+
+        this.targetDoorState = this.garageDoorOpener.getCharacteristic(Characteristic.TargetDoorState);
+        this.targetDoorState
+            .on('get', this.getTargetState.bind(this))
+            .on('set', this.setTargetState.bind(this));
 
         this.informationService = new Service.AccessoryInformation();
         this.informationService
             .setCharacteristic(Characteristic.Manufacturer, 'ESPEasy Garage Door')
             .setCharacteristic(Characteristic.Model, 'ESPEasy Remote Control')
-            .setCharacteristic(Characteristic.SerialNumber, '1068');
+            .setCharacteristic(Characteristic.SerialNumber, '1068')
+
+        this.readSensorState(() => {
+            var tmpstate = this.getCharacteristicState();
+            if (!this.SensorState.Error) {
+                this.log("We have a door sensor, monitoring door state enabled.");
+            }
+            this.currentDoorState.updateValue(tmpstate)
+            this.targetDoorState.updateValue(tmpstate)
+
+        })
+
     }
 
-    setupGarageDoorOpenerService() {
-
-        this.service.setCharacteristic(Characteristic.TargetDoorState, Characteristic.TargetDoorState.CLOSED);
-        this.service.setCharacteristic(Characteristic.CurrentDoorState, Characteristic.CurrentDoorState.CLOSED);
-
-        this.service.getCharacteristic(Characteristic.TargetDoorState)
-            .on('get', this.getState.bind(this))
-            .on('set', this.setState.bind(this));
-
+    getCharacteristicState() {
+        if (this.SensorState.Error) {
+            return Characteristic.STOPPED;
+        }
+        return this.SensorState.Close ? Characteristic.CLOSED : (this.SensorsState.Open ? Characteristic.OPEN : Characteristic.STOPPED)
     }
-    getState(callback) {
+
+    getCurrentState(callback) {
         var log = this.log;
-        var state = 
+        this.readSensorState(() => {
+            if (!this.SensorState.Error) {
+                var state = this.getCharacteristicState();
+                this.log("GarageDoor is " + this.doorStateToString(state));
+                callback(null, state);
+            }
+
+            else {
+                log.debug('Error getting door state. (%s)', error);
+                callback();
+            }
+        })
+    }
+
+    setFinalDoorState() {
+        this.readSensorState(() => {
+
+            if ((this.targetState == DoorState.CLOSED && !this.SensorState.Close) || (this.targetState == DoorState.OPEN && !this.SensorState.Open)) {
+                this.log("Was trying to finish operation" + (this.targetState == DoorState.CLOSED ? "CLOSE" : "OPEN") + " the door, but it is still " + (ihis.SensorState.Close ? "CLOSED" : "OPEN"));
+                //this.currentDoorState.updateValue(DoorState.STOPPED);
+            } else {
+                this.log("Set current state to " + (this.targetState == DoorState.CLOSED ? "CLOSED" : "OPEN"));
+                this.wasClosed = this.targetState == DoorState.CLOSED;
+                this.currentDoorState.updateValue(this.targetState);
+            }
+            this.operating = false;
+        })
+    }
+
+    readSensorState(callback) {
         request.get({
             url: 'http://' + this.ip + '/json',
             timeout: 120000
@@ -46,53 +99,85 @@ class ESPEasyGarageOpener {
             if (!error && response.statusCode == 200) {
                 var json = JSON.parse(body);
 
-                log.debug('State: ' + json.Sensors);
-                for (var keyStat in this.SensorsState) {
-                    this.SensorsState[keyStat] = getStateFromJson(json, keyStat);
-                }
+                json.Sensors.ForEach(item => {
+                    this.SensorsState[item.TaskName] = (item.state == 1)
+                })
+                this.SensorState.Error = false;
 
-                if (this.SensorsState.Close && !this.SensorsState.Open) {
-                    callback(null, Characteristic.TargetDoorState.CLOSED)
-                    return
-                }
-
-                if (!this.SensorState.Close && this.SensorState.Open) {
-                    callback(null, Characteristic.TargetDoorState.OPEN)
-                    return
-                }
-
-                if (this.SensorState.Close && this.SensorState.Open) {
-                    callback(null, Characteristic.TargetDoorState.OPENING)
-                    return
-                }
-
-                log.debug('Error getting door state. (%s)', error);
-                callback();
+                log.debug('State: ' + this.SensorsState);
+                callback()
             }
-            else{
+            else {
                 log.debug('Error getting door state. (%s)', error);
+                this.SensorState.Error = false;
                 callback();
             }
         })
+
     }
 
-    getOpen() {
-        return this.SensorsState.Close && !this.SensorsState.Open
+    getTargetState(callback) {
+        callback(null, this.targetState);
     }
 
-    getStateFromJson(json, key) {
-        try {
-            return (parseInt(json.Sensors.find(item => item.TaskName.toUpperCase() == key.toUpperCase()).state) == 1);
+    setTargetState(state, callback) {
+        this.log("Setting state to " + state);
+        this.targetState = state;
+        this.readSensorState(() => {
 
-        }
-        catch{
-            return false;
-        }
+            if ((state == DoorState.OPEN && this.SensorState.Close) || (state == DoorState.CLOSED && !this.SensorState.Close)) {
+                this.log("Triggering GarageDoor Relay");
+                this.operating = true;
+                if (state == DoorState.OPEN) {
+                    this.currentDoorState.updateValue(DoorState.OPENING);
+                } else {
+                    this.currentDoorState.updateValue(DoorState.CLOSING);
+                }
+                setTimeout(this.setFinalDoorState.bind(this), this.doorOpensInSeconds * 1000);
+                this.switchDoor(state == DoorState.OPEN ? 'Close' : 'Open');
+            }
+
+            callback();
+            return true;
+        })
     }
-    setState(callback) {
+
+    switchDoor(cmd) {
+        request.get({
+            url: 'http://' + this.ip + '/control?cmd=event,' + (cmd || 'Signal'),
+            timeout: 120000
+        }, (error, response, body) => {
+            if (!error && response.statusCode == 200) {
+                if (body == 'OK')
+                    return;
+
+                log.debug('Response Error: %s', body);
+                return;
+            }
+
+            log.debug('Error setting door state. (%s)', error);
+        });
+
+        )
 
     }
     getServices() {
-        return [this.informationService, this.service];
+        return [this.informationService, this.garageDoorOpener];
     }
+
+    // Tools procedures
+
+    doorStateToString(state) {
+        switch (state) {
+            case DoorState.OPEN:
+                return "OPEN";
+            case DoorState.CLOSED:
+                return "CLOSED";
+            case DoorState.STOPPED:
+                return "STOPPED";
+            default:
+                return "UNKNOWN";
+        }
+    }
+
 }
