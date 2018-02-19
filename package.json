@@ -1,6 +1,6 @@
 {
-  "name": "homebridge-ESPEasyGarageOpener",
-  "version": "1.0.0",
+  "name": "homebridge-espasygarageopener",
+  "version": "1.0.2",
   "description": "plugin for homebridge",
   "main": "index.js",
   "scripts": {
