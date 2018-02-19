@@ -17,7 +17,7 @@ class ESPEasyGarageOpener {
         this.ip = config.ip;
         this.doorOpensInSeconds = config.doorOpensInSeconds || 16;
         this.doorCloseInSeconds = config.doorCloseInSeconds || this.doorOpensInSeconds;
-        this.SensorState = { Error: false, Close: true, Open: false, Relay: false, Motor: false };
+        this.SensorsState = { Error: false, Close: true, Open: false, Relay: false, Motor: false };
         this.initService();
     }
 
@@ -43,8 +43,8 @@ class ESPEasyGarageOpener {
 
         this.readSensorState(() => {
             var tmpstate = this.getCharacteristicState();
-            if (!this.SensorState.Error) {
-                this.log("We have a door sensor, monitoring door state enabled.");
+            if (!this.SensorsState.Error) {
+                this.log("We have a door sensors, monitoring door state enabled.");
             }
             this.currentDoorState.updateValue(tmpstate)
             this.targetDoorState.updateValue(tmpstate)
@@ -54,16 +54,16 @@ class ESPEasyGarageOpener {
     }
 
     getCharacteristicState() {
-        if (this.SensorState.Error) {
+        if (this.SensorsState.Error) {
             return Characteristic.STOPPED;
         }
-        return this.SensorState.Close ? Characteristic.CLOSED : (this.SensorsState.Open ? Characteristic.OPEN : Characteristic.STOPPED)
+        return this.SensorsState.Close ? Characteristic.CLOSED : (this.SensorsState.Open ? Characteristic.OPEN : Characteristic.STOPPED)
     }
 
     getCurrentState(callback) {
         var log = this.log;
         this.readSensorState(() => {
-            if (!this.SensorState.Error) {
+            if (!this.SensorsState.Error) {
                 var state = this.getCharacteristicState();
                 this.log("GarageDoor is " + this.doorStateToString(state));
                 callback(null, state);
@@ -79,7 +79,7 @@ class ESPEasyGarageOpener {
     setFinalDoorState() {
         this.readSensorState(() => {
 
-            if ((this.targetState == DoorState.CLOSED && !this.SensorState.Close) || (this.targetState == DoorState.OPEN && !this.SensorState.Open)) {
+            if ((this.targetState == DoorState.CLOSED && !this.SensorsState.Close) || (this.targetState == DoorState.OPEN && !this.SensorsState.Open)) {
                 this.log("Was trying to finish operation" + (this.targetState == DoorState.CLOSED ? "CLOSE" : "OPEN") + " the door, but it is still " + (ihis.SensorState.Close ? "CLOSED" : "OPEN"));
                 //this.currentDoorState.updateValue(DoorState.STOPPED);
             } else {
@@ -97,27 +97,35 @@ class ESPEasyGarageOpener {
         else
     return value;
     }
+
+    timeStamp(){
+        return new Date().valueOf()
+    }
+
     readSensorState(callback) {
         request.get({
             url: 'http://' + this.ip + '/json',
             timeout: 120000
         }, (error, response, body) => {
-            if (!error && response.statusCode == 200) {
-                var json = JSON.parse('{"System":{"Build": 20000,"Unit": 1, "Uptime": 1143,"Free RAM": 20464 },"Sensors":[ {"TaskName": "Close","state": 1.00},{"TaskName": "Open","state": 0.00}, { "TaskName": "Relay",  "state": 0.00},{  "TaskName": "Motor",   "state": 0.0 }]}')
-                 //var json = JSON.parse(body,(key,value) => this.parseJSON(key,value));
 
-                json.Sensors.forEach(item => {
-                    this.log(item)
-                    this.SensorsState[item.TaskName] = (item.state == 1 ? true : false)
+            this.SensorsState.TimeStamp = this.timeStamp()
+
+            if (!error && response.statusCode == 200) {
+
+            // We are testing only Sensors ...
+               body = "{" + body.match(/"Sensors":\[.+\]/i)[0] + "}"
+               
+               JSON.parse(body).Sensors.forEach(item => {
+                    this.SensorsState[item.TaskName] = item.state == 1
                 })
-                this.SensorState.Error = false;
+                this.SensorsState.Error = false;
 
                 log.debug('State: ' + this.SensorsState);
                 callback()
             }
             else {
                 log.debug('Error getting door state. (%s)', error);
-                this.SensorState.Error = false;
+                this.SensorsState.Error = true;
                 callback();
             }
         })
@@ -133,7 +141,7 @@ class ESPEasyGarageOpener {
         this.targetState = state;
         this.readSensorState(() => {
 
-            if ((state == DoorState.OPEN && this.SensorState.Close) || (state == DoorState.CLOSED && !this.SensorState.Close)) {
+            if ((state == DoorState.OPEN && this.SensorsState.Close) || (state == DoorState.CLOSED && !this.SensorsState.Close)) {
                 this.log("Triggering GarageDoor Relay");
                 this.operating = true;
                 if (state == DoorState.OPEN) {
