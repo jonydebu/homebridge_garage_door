@@ -1,2 +1,2 @@
-# homebridge_garage_door
+# homebridge-ESPEasyGarageOpener
 Plugin for homebridge

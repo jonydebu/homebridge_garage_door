@@ -48,6 +48,7 @@ class ESPEasyGarageOpener {
             }
             this.currentDoorState.updateValue(tmpstate)
             this.targetDoorState.updateValue(tmpstate)
+            this.log("Start value",this.doorStateToString(tmpstate));
 
         })
 
@@ -57,7 +58,7 @@ class ESPEasyGarageOpener {
         if (this.SensorsState.Error) {
             return Characteristic.STOPPED;
         }
-        return this.SensorsState.Close ? Characteristic.CLOSED : (this.SensorsState.Open ? Characteristic.OPEN : Characteristic.STOPPED)
+        return this.SensorsState.Close ? DoorState.CLOSED : (this.SensorsState.Open ? DoorState.OPEN : DoorState.STOPPED)
     }
 
     getCurrentState(callback) {
@@ -80,7 +81,7 @@ class ESPEasyGarageOpener {
         this.readSensorState(() => {
 
             if ((this.targetState == DoorState.CLOSED && !this.SensorsState.Close) || (this.targetState == DoorState.OPEN && !this.SensorsState.Open)) {
-                this.log("Was trying to finish operation" + (this.targetState == DoorState.CLOSED ? "CLOSE" : "OPEN") + " the door, but it is still " + (ihis.SensorState.Close ? "CLOSED" : "OPEN"));
+                this.log("Was trying to finish operation" + (this.targetState == DoorState.CLOSED ? "CLOSE" : "OPEN") + " the door, but it is still " + (this.SensorState.Close ? "CLOSED" : "OPEN"));
                 //this.currentDoorState.updateValue(DoorState.STOPPED);
             } else {
                 this.log("Set current state to " + this.doorStateToString(this.targetState));
@@ -102,29 +103,33 @@ class ESPEasyGarageOpener {
     }
 
     readSensorState(callback) {
+        var log = this.log;
+        var SensorsState = this.SensorsState;
         request.get({
             url: 'http://' + this.ip + '/json',
             timeout: 120000
         }, (error, response, body) => {
 
-            this.SensorsState.TimeStamp = this.timeStamp()
+            SensorsState.TimeStamp = this.timeStamp()
 
             if (!error && response.statusCode == 200) {
 
                 // We are testing only Sensors from ESPEasy json message - in this message is corrupt on Local date - strong date format :-(( ...
-                body = "{" + body.match(/"Sensors":\[.+\]/i)[0] + "}"
-
+           
+               
+                body = "{" + body.replace(/\n/g,'').match(/"Sensors":\[.+\]/i)[0] + "}"
+                log.debug(body)
                 JSON.parse(body).Sensors.forEach(item => {
-                    this.SensorsState[item.TaskName] = item.state == 1
+                    SensorsState[item.TaskName] = item.state == 1
                 })
-                this.SensorsState.Error = false;
+                SensorsState.Error = false;
 
-                log.debug('State: ' + this.SensorsState);
+                log.debug('State: ',SensorsState);
                 callback()
             }
             else {
                 log.debug('Error getting door state. (%s)', error);
-                this.SensorsState.Error = true;
+                SensorsState.Error = true;
                 callback();
             }
         })
@@ -136,7 +141,7 @@ class ESPEasyGarageOpener {
     }
 
     setTargetState(state, callback) {
-        this.log("Setting state to " + state);
+        this.log("Setting state to ",this.doorStateToString(state));
         this.targetState = state;
         this.readSensorState(() => {
 
@@ -149,7 +154,7 @@ class ESPEasyGarageOpener {
                     this.currentDoorState.updateValue(DoorState.CLOSING);
                 }
                 setTimeout(this.setFinalDoorState.bind(this), this.doorOpensInSeconds * 1000);
-                this.switchDoor(state == DoorState.OPEN ? 'Close' : 'Open');
+                this.switchDoor(state == DoorState.OPEN ? 'Open' : 'Close');
             }
 
             callback();
@@ -163,7 +168,9 @@ class ESPEasyGarageOpener {
             url: 'http://' + this.ip + '/control?cmd=event,' + (cmd || 'Signal'),
             timeout: 120000
         }, (error, response, body) => {
+            log.debug("switchDoor",response.statusCode,body)
             if (!error && response.statusCode == 200) {
+                
                 if (body == 'OK')
                     return;
 
