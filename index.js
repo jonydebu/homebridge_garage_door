@@ -83,22 +83,21 @@ class ESPEasyGarageOpener {
                 this.log("Was trying to finish operation" + (this.targetState == DoorState.CLOSED ? "CLOSE" : "OPEN") + " the door, but it is still " + (ihis.SensorState.Close ? "CLOSED" : "OPEN"));
                 //this.currentDoorState.updateValue(DoorState.STOPPED);
             } else {
-                this.log("Set current state to " + (this.targetState == DoorState.CLOSED ? "CLOSED" : "OPEN"));
-                this.wasClosed = this.targetState == DoorState.CLOSED;
+                this.log("Set current state to " + this.doorStateToString(this.targetState));
                 this.currentDoorState.updateValue(this.targetState);
             }
             this.operating = false;
         })
     }
-    parseJSON(key,value){
+    parseJSON(key, value) {
         this.log("parse")
-        if(key === 'System')
-        return  ''
+        if (key === 'System')
+            return ''
         else
-    return value;
+            return value;
     }
 
-    timeStamp(){
+    timeStamp() {
         return new Date().valueOf()
     }
 
@@ -112,10 +111,10 @@ class ESPEasyGarageOpener {
 
             if (!error && response.statusCode == 200) {
 
-            // We are testing only Sensors ...
-               body = "{" + body.match(/"Sensors":\[.+\]/i)[0] + "}"
-               
-               JSON.parse(body).Sensors.forEach(item => {
+                // We are testing only Sensors from ESPEasy json message - in this message is corrupt on Local date - strong date format :-(( ...
+                body = "{" + body.match(/"Sensors":\[.+\]/i)[0] + "}"
+
+                JSON.parse(body).Sensors.forEach(item => {
                     this.SensorsState[item.TaskName] = item.state == 1
                 })
                 this.SensorsState.Error = false;
@@ -159,6 +158,7 @@ class ESPEasyGarageOpener {
     }
 
     switchDoor(cmd) {
+        var log = this.log
         request.get({
             url: 'http://' + this.ip + '/control?cmd=event,' + (cmd || 'Signal'),
             timeout: 120000
@@ -190,6 +190,10 @@ class ESPEasyGarageOpener {
                 return "CLOSED";
             case DoorState.STOPPED:
                 return "STOPPED";
+            case DoorState.OPENING:
+                return "OPENING";
+            case DoorState.CLOSSING:
+                return "CLOSSING";
             default:
                 return "UNKNOWN";
         }
