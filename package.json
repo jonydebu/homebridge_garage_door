@@ -1,5 +1,5 @@
 {
-  "name": "homebridge-espasygarageopener",
+  "name": "homebridge-espeasy-door-opener",
   "version": "1.0.2",
   "description": "plugin for homebridge",
   "main": "index.js",
